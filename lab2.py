@@ -1,3 +1,5 @@
+# check code status
+
 import os
 import sys
 import threading
@@ -5,7 +7,7 @@ import socket
 
 BACKLOG = 5
 DATA_RECV = 4096
-BAD_WORDS = ["spongebob", "britney spears", "paris hilton", "norrköping", "viii"] #test
+BAD_WORDS = ["palace", "britney spears", "paris hilton", "norrköping", "viii"] #test
 REDIRECT_URL_BAD_URL = "http://www.ida.liu.se/~TDTS04/labs/2011/ass2/error1.html"
 REDIRECT_URL__BAD_CONTENT = "http://www.ida.liu.se/~TDTS04/labs/2011/ass2/error2.html"
 
@@ -65,30 +67,36 @@ def proxy_server_side(connection_socket, client_addr):
     
     # get first line
     first_line = request.split("\n")[0]
-    
-    print(first_line)
+
     # get the absolute url
+    if(len(first_line) == 0):
+        print("first line empty")
+        connection_socket.close()
+        return
     url = first_line.split(" ")[1]
     
+    print(client_addr, "\tRequest\t", first_line) 
+
     # check url for bad words
     if(contains_bad_words(url.lower())):
         print("Censured words found in url : web redirection")
         response = "HTTP/1.1 301 Moved Permanently\r\nLocation: " + REDIRECT_URL_BAD_URL + "\r\n"
-        connection_socket.send(response.encode())
-        connection_socket.close()
+        connection_socket.send(response.encode())     
     
     else:
-        proxy_client_side(connection_socket, client_addr, request)
-
-def proxy_client_side(connection_socket, client_addr, request):
+        response = proxy_client_side(request)
+        connection_socket.send(response)
     
+    connection_socket.close()
+
+def proxy_client_side(request):
+    #print(request)
+
     # get first line
     first_line = request.split("\n")[0]
     
     # get the absolute url
     url = first_line.split(" ")[1]
-
-    print(client_addr, "\tRequest\t", first_line)
 
     # find webserver name
     webserver_begin_pos = url.find("://")
@@ -96,7 +104,16 @@ def proxy_client_side(connection_socket, client_addr, request):
     web_server_name = url[webserver_begin_pos+3:webserver_end_pos]
     
     port_server = 80
-       
+
+    # modify the request
+    if(url.find("://") != -1):
+        print("Modify request")
+        first_line_end_pos = request.find("\n")
+        temp = request[first_line_end_pos+1:]
+        abs_path = url[webserver_end_pos:]
+        request = first_line.split(" ")[0] + " " + abs_path + " " + first_line.split(" ")[2] + "\n" + temp
+        #print(request)
+
     try:
         # create a socket to connect to the web server
         s2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -104,47 +121,43 @@ def proxy_client_side(connection_socket, client_addr, request):
         s2.send(request.encode())
         
         # retrieve data
-        data_encoded = s2.recv(DATA_RECV)
+        all_data_encoded = data_received = s2.recv(DATA_RECV)
         
-        # check if content-type header is text
+        # check if content-type header is text and not compressed (gzip)
         isText = False
-        headers, sep, body = data_encoded.partition(b"\r\n\r\n")
+        headers, sep, body = all_data_encoded.partition(b"\r\n\r\n")
         headers = headers.decode('utf-8')
         if (headers.find("Content-Type: text") != -1):
+            if(headers.find("gzip") == -1):
                 isText = True
 
-        print(headers)
-        print("length header: ", len(headers.encode()))
+        #print(headers)
+        #print("length header: ", len(headers.encode()))
 
-        text_encoded = b""
         # receive data from web server and send it to browser
-        while(len(data_encoded) != 0):
-            #print("****PRINT*** ", data_encoded.decode('utf-8'))
-            print("length data: ", len(data_encoded))
+        while(len(data_received) != 0):
+            
+            #print("length all data: ", len(all_data_encoded))
+            #print("length data received: ", len(data_received))
             
             # if the content is text
             if(isText):
-                text_encoded += data_encoded
-                # End of data transfer: check for censured words in text content
-                if(len(data_encoded) < DATA_RECV): 
-                    if(contains_bad_words(text_encoded.decode('utf-8').lower())):
-                        print("Censured words found in content : web redirection")
-                        response = "HTTP/1.1 301 Moved Permanently\r\nLocation: " + REDIRECT_URL__BAD_CONTENT + "\r\n"
-                        connection_socket.send(response.encode())
-                    else:
-                        connection_socket.send(text_encoded) 
-            else:
-                connection_socket.send(data_encoded)     
+                # check for censured words in text content 
+                if(contains_bad_words(data_received.decode('utf-8').lower())):
+                    print("Censured words found in content : web redirection")
+                    response = "HTTP/1.1 301 Moved Permanently\r\nLocation: " + REDIRECT_URL__BAD_CONTENT + "\r\n"
+                    s2.close()
+                    return response.encode() 
             
-            data_encoded = s2.recv(DATA_RECV)
+            data_received = s2.recv(DATA_RECV)
+            all_data_encoded += data_received   
 
         s2.close()
-        connection_socket.close()
+        return all_data_encoded
+
     except OSError as error:
         if s2:
             s2.close()
-        if connection_socket:
-            connection_socket.close()
         print("client side proxy problem", error)
         #sys.exit(1)
 
