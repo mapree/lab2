@@ -1,5 +1,3 @@
-# check code status
-
 import os
 import sys
 import threading
@@ -20,8 +18,9 @@ def contains_bad_words(str):
 
 # Initialize the proxy : create a socket and listen for connection.
 #       Handle each connection in a new thread.
-def main():
+def proxy_init():
 
+    ##### FEATURE 7 #####
     # check if port number was given in command line
     if (len(sys.argv)<2):
         print ("No port given, using :8080 (http-alt)") 
@@ -66,6 +65,8 @@ def proxy_server_side(connection_socket, client_addr):
 
     # get the request from browser
     request = connection_socket.recv(MAX_DATA_RECV).decode('utf-8')
+    #print(request)
+    #request = request.decode('utf-8')
     
     # get first line
     first_line = request.split("\n")[0]
@@ -73,12 +74,14 @@ def proxy_server_side(connection_socket, client_addr):
     # get the absolute url
     if(len(first_line) == 0):
         print("first line empty")
+        print("request: ", request)
         connection_socket.close()
         return
     url = first_line.split(" ")[1]
     
     print(client_addr, "\tRequest\t", first_line) 
-
+    
+    ##### FEATURE 3 #####
     # check url for censured words
     if(contains_bad_words(url.lower())):
         print("Censured words found in url : web redirection")
@@ -90,6 +93,7 @@ def proxy_server_side(connection_socket, client_addr):
         response = proxy_client_side(request)
         # send the response to the browser
         connection_socket.send(response)
+        print("*** data delivered to browser ***\n")
     
     connection_socket.close()
 
@@ -98,7 +102,6 @@ def proxy_server_side(connection_socket, client_addr):
 #       If needed, filter the data received from server.
 #       Send the response back the server side.
 def proxy_client_side(request):
-    #print(request)
 
     # get first line
     first_line = request.split("\n")[0]
@@ -115,12 +118,12 @@ def proxy_client_side(request):
 
     # remove host information from the GET line
     if(url.find("://") != -1):
-        print("Request modification")
         first_line_end_pos = request.find("\n")
         temp = request[first_line_end_pos+1:]
         abs_path = url[webserver_end_pos:]
-        request = first_line.split(" ")[0] + " " + abs_path + " " + first_line.split(" ")[2] + "\n" + temp
-        #print(request)
+        first_line = first_line.split(" ")[0] + " " + abs_path + " " + first_line.split(" ")[2] + "\n"
+        request = first_line + temp
+        print("Request modification: ", first_line)
 
     try:
         # create a socket to connect to the web server
@@ -131,23 +134,19 @@ def proxy_client_side(request):
         # retrieve data
         all_data_encoded = data_received = s2.recv(MAX_DATA_RECV)
         
-        # check if content-type header is text and not compressed (gzip)
+        ##### FEATURE 8 #####
+        # check if content is text and not compressed
         isText = False
         headers, sep, body = all_data_encoded.partition(b"\r\n\r\n")
         headers = headers.decode('utf-8')
         if (headers.find("Content-Type: text") != -1):
-            if(headers.find("gzip") == -1):
+            if(headers.find("Content-Encoding") == -1):
                 isText = True
 
-        #print(headers)
-        #print("length header: ", len(headers.encode()))
-
         # receive data from web server
-        while(len(data_received) != 0):
+        while(len(data_received) > 0):
             
-            #print("length all data: ", len(all_data_encoded))
-            #print("length data received: ", len(data_received))
-            
+            ##### FEATURE 4 #####
             # if the content needs to be filtered
             if(isText):
                 # check for censured words in the newly received data 
@@ -168,7 +167,6 @@ def proxy_client_side(request):
         if s2:
             s2.close()
         print("client side proxy problem", error)
-        #sys.exit(1)
 
 if __name__ == "__main__":
-    main()
+    proxy_init()
