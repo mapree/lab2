@@ -6,19 +6,20 @@ import threading
 import socket
 
 BACKLOG = 5
-DATA_RECV = 4096
-BAD_WORDS = ["palace", "britney spears", "paris hilton", "norrköping", "viii"] #test
+MAX_DATA_RECV = 4096
+BAD_WORDS = ["spongebob", "britney spears", "paris hilton", "norrköping"] 
 REDIRECT_URL_BAD_URL = "http://www.ida.liu.se/~TDTS04/labs/2011/ass2/error1.html"
 REDIRECT_URL__BAD_CONTENT = "http://www.ida.liu.se/~TDTS04/labs/2011/ass2/error2.html"
 
-# Search for bad words in a given string
+# Search for censured words in a given string
 def contains_bad_words(str):
     for word in BAD_WORDS:
         if(str.find(word) != -1):
             return True
     return False
 
-# Initialize the proxy 
+# Initialize the proxy : create a socket and listen for connection.
+#       Handle each connection in a new thread.
 def main():
 
     # check if port number was given in command line
@@ -58,12 +59,13 @@ def main():
     
     s.close()
 
-# Server part of the proxy : send request to the client side of proxy or 
-#       send 301 response to browser if censured words contained in url
+# Server part of the proxy : forward the request to the client side of proxy and 
+#       send the response back to the browser.
+#       Or send 301 response to browser if censured words contained in url.  
 def proxy_server_side(connection_socket, client_addr):
 
     # get the request from browser
-    request = connection_socket.recv(DATA_RECV).decode('utf-8')
+    request = connection_socket.recv(MAX_DATA_RECV).decode('utf-8')
     
     # get first line
     first_line = request.split("\n")[0]
@@ -77,18 +79,24 @@ def proxy_server_side(connection_socket, client_addr):
     
     print(client_addr, "\tRequest\t", first_line) 
 
-    # check url for bad words
+    # check url for censured words
     if(contains_bad_words(url.lower())):
         print("Censured words found in url : web redirection")
         response = "HTTP/1.1 301 Moved Permanently\r\nLocation: " + REDIRECT_URL_BAD_URL + "\r\n"
         connection_socket.send(response.encode())     
     
     else:
+        # forward the request to the client side
         response = proxy_client_side(request)
+        # send the response to the browser
         connection_socket.send(response)
     
     connection_socket.close()
 
+# Client part of the proxy : Modify the request if needed.
+#       Create a socket and connect to web server.
+#       If needed, filter the data received from server.
+#       Send the response back the server side.
 def proxy_client_side(request):
     #print(request)
 
@@ -105,9 +113,9 @@ def proxy_client_side(request):
     
     port_server = 80
 
-    # modify the request
+    # remove host information from the GET line
     if(url.find("://") != -1):
-        print("Modify request")
+        print("Request modification")
         first_line_end_pos = request.find("\n")
         temp = request[first_line_end_pos+1:]
         abs_path = url[webserver_end_pos:]
@@ -121,7 +129,7 @@ def proxy_client_side(request):
         s2.send(request.encode())
         
         # retrieve data
-        all_data_encoded = data_received = s2.recv(DATA_RECV)
+        all_data_encoded = data_received = s2.recv(MAX_DATA_RECV)
         
         # check if content-type header is text and not compressed (gzip)
         isText = False
@@ -134,22 +142,23 @@ def proxy_client_side(request):
         #print(headers)
         #print("length header: ", len(headers.encode()))
 
-        # receive data from web server and send it to browser
+        # receive data from web server
         while(len(data_received) != 0):
             
             #print("length all data: ", len(all_data_encoded))
             #print("length data received: ", len(data_received))
             
-            # if the content is text
+            # if the content needs to be filtered
             if(isText):
-                # check for censured words in text content 
+                # check for censured words in the newly received data 
                 if(contains_bad_words(data_received.decode('utf-8').lower())):
                     print("Censured words found in content : web redirection")
                     response = "HTTP/1.1 301 Moved Permanently\r\nLocation: " + REDIRECT_URL__BAD_CONTENT + "\r\n"
                     s2.close()
                     return response.encode() 
             
-            data_received = s2.recv(DATA_RECV)
+            data_received = s2.recv(MAX_DATA_RECV)
+            # add newly received data to the whole response
             all_data_encoded += data_received   
 
         s2.close()
