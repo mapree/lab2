@@ -7,7 +7,7 @@ BACKLOG = 5
 MAX_DATA_RECV = 4096
 BAD_WORDS = ["spongebob", "britney spears", "paris hilton", "norrköping"] 
 REDIRECT_URL_BAD_URL = "http://www.ida.liu.se/~TDTS04/labs/2011/ass2/error1.html"
-REDIRECT_URL__BAD_CONTENT = "http://www.ida.liu.se/~TDTS04/labs/2011/ass2/error2.html"
+REDIRECT_URL_BAD_CONTENT = "http://www.ida.liu.se/~TDTS04/labs/2011/ass2/error2.html"
 
 # Search for censured words in a given string
 def contains_bad_words(str):
@@ -63,18 +63,24 @@ def proxy_init():
 #       Or send 301 response to browser if censured words contained in url.  
 def proxy_server_side(connection_socket, client_addr):
 
+    ##### FEATURE 6 #####
     # get the request from browser
-    request = connection_socket.recv(MAX_DATA_RECV).decode('utf-8')
-    #print(request)
-    #request = request.decode('utf-8')
+    request = connection_socket.recv(MAX_DATA_RECV)
+    headers, sep, body = request.partition(b"\r\n\r\n")
+    headers = headers.decode('utf-8')
+    if (headers.find("GET") == -1):
+        print("Not a GET request")
+        connection_socket.close()
+        return
+    
+    request = request.decode('utf-8')
     
     # get first line
     first_line = request.split("\n")[0]
 
     # get the absolute url
     if(len(first_line) == 0):
-        print("first line empty")
-        print("request: ", request)
+        print("Empty request")
         connection_socket.close()
         return
     url = first_line.split(" ")[1]
@@ -109,12 +115,16 @@ def proxy_client_side(request):
     # get the absolute url
     url = first_line.split(" ")[1]
 
-    # find webserver name
+    # find webserver name and port
     webserver_begin_pos = url.find("://")
     webserver_end_pos = url.find("/",webserver_begin_pos+3)
-    web_server_name = url[webserver_begin_pos+3:webserver_end_pos]
-    
-    port_server = 80
+    port_pos = url.find(":", webserver_begin_pos+3)
+    if(port_pos == -1):
+        web_server_name = url[webserver_begin_pos+3:webserver_end_pos]
+        port_server = 80
+    else:
+        web_server_name = url[webserver_begin_pos+3:port_pos]
+        port_server = int(url[port_pos+1: webserver_end_pos])
 
     # remove host information from the GET line
     if(url.find("://") != -1):
@@ -139,7 +149,7 @@ def proxy_client_side(request):
         isText = False
         headers, sep, body = all_data_encoded.partition(b"\r\n\r\n")
         headers = headers.decode('utf-8')
-        if (headers.find("Content-Type: text") != -1):
+        if (headers.find("text") != -1):
             if(headers.find("Content-Encoding") == -1):
                 isText = True
 
@@ -152,7 +162,7 @@ def proxy_client_side(request):
                 # check for censured words in the newly received data 
                 if(contains_bad_words(data_received.decode('utf-8').lower())):
                     print("Censured words found in content : web redirection")
-                    response = "HTTP/1.1 301 Moved Permanently\r\nLocation: " + REDIRECT_URL__BAD_CONTENT + "\r\n"
+                    response = "HTTP/1.1 301 Moved Permanently\r\nLocation: " + REDIRECT_URL_BAD_CONTENT + "\r\n"
                     s2.close()
                     return response.encode() 
             
