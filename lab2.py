@@ -35,7 +35,7 @@ def proxy_init():
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         
-        print("server on ", host, ": ", port)
+        print("server on {0}:{1}".format(host, port))
 
         # associate socket to host and port
         s.bind((host, port))
